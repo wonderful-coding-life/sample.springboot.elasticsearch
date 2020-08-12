@@ -22,6 +22,7 @@ import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.client.core.GetSourceRequest;
 import org.elasticsearch.client.core.GetSourceResponse;
+import org.elasticsearch.common.document.DocumentField;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
@@ -35,6 +36,11 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 import lombok.extern.slf4j.Slf4j;
+
+
+/*
+ * https://www.elastic.co/guide/en/elasticsearch/client/java-rest/7.8/java-rest-high.html
+ */
 
 @Slf4j
 @SpringBootApplication
@@ -82,13 +88,23 @@ public class DemoElasticsearchApplication {
 		
 		log.info("testing search API...");
 		
-		SearchRequest searchRequest = new SearchRequest(INDEX_DEMO_ITEM); 
+		SearchRequest searchRequest = new SearchRequest("iteminfo"); 
 
 		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder(); 
-		sourceBuilder.query(QueryBuilders.termQuery("title", "아이폰")); 
+		//sourceBuilder.query(QueryBuilders.termQuery("title", "아이폰")); 
 		//sourceBuilder.query(QueryBuilders.matchQuery("title", "아이폰"));
+		
+//		sourceBuilder.query(QueryBuilders.boolQuery()
+//                .must(QueryBuilders.termQuery("keywordField", "value"))
+//                .mustNot(QueryBuilders.termQuery("keywordField2", "value2"))
+//                .should(QueryBuilders.termQuery("keywordField3", "value3"))
+//                .filter(QueryBuilders.termQuery("keywordField4", "value4")));
+
+		
+		sourceBuilder.query(QueryBuilders.multiMatchQuery("아이폰", "title", "description"));
 		sourceBuilder.from(0); // paging from
-		sourceBuilder.size(5); // paging count
+		sourceBuilder.size(20); // paging count
+		//sourceBuilder.storedField("_source.title");
 		searchRequest.source(sourceBuilder);
 		
 		SearchResponse searchResponse = client.search(searchRequest, RequestOptions.DEFAULT);
@@ -126,9 +142,16 @@ public class DemoElasticsearchApplication {
 			String id = hit.getId();
 			float score = hit.getScore();
 			String sourceAsString = hit.getSourceAsString();
+			
+			//Map<String, DocumentField> fieldsAsMap = hit.getFields();
+			//log.info(">>>" + fieldsAsMap.keySet());
+			//log.info(">>> field " + hit.field("title").getValue());
+			//log.info("title = " + fieldsAsMap.get("title").getValue());
+			
 			Map<String, Object> sourceAsMap = hit.getSourceAsMap();
 			String documentTitle = (String) sourceAsMap.get("title");
 			String documentDescription = (String) sourceAsMap.get("description");
+			log.info("score = " + score);
 			log.info("title = " + documentTitle);
 			log.info("description = " + documentDescription);
 		}
