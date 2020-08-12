@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.apache.http.HttpHost;
+import org.apache.lucene.search.TotalHits;
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest;
 import org.elasticsearch.action.delete.DeleteRequest;
 import org.elasticsearch.action.delete.DeleteResponse;
@@ -13,14 +14,23 @@ import org.elasticsearch.action.get.GetRequest;
 import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexResponse;
+import org.elasticsearch.action.search.SearchRequest;
+import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.search.ShardSearchFailure;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.client.core.GetSourceRequest;
 import org.elasticsearch.client.core.GetSourceResponse;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.geometry.utils.Geohash;
+import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.rest.RestStatus;
+import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.SearchHits;
+import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -30,6 +40,8 @@ import lombok.extern.slf4j.Slf4j;
 @SpringBootApplication
 public class DemoElasticsearchApplication {
 	
+	private static final String INDEX_DEMO_ITEM = "demoitem";
+	
 	public static void main(String[] args) throws IOException {
 		SpringApplication.run(DemoElasticsearchApplication.class, args);
 		
@@ -38,8 +50,10 @@ public class DemoElasticsearchApplication {
 		// Single document APIs
 		testSingleDocumentApi(client);
 		
+		// Search APIs
+		testSearchApi(client);
 		
-		testDeleteIndexRequest(client); // delete index
+		//testDeleteIndexRequest(client); // delete index
 		
 		client.close();
 	}
@@ -57,11 +71,67 @@ public class DemoElasticsearchApplication {
 		// TBD: Exists API
 		
 		// Delete API - delete document
-		testDeleteRequest(client);
+		// testDeleteRequest(client);
 		
 		// TBD: Update API - update partial document
 		
 		// TBD: Term Vectors API
+	}
+
+	private static void testSearchApi(RestHighLevelClient client) throws IOException {
+		
+		log.info("testing search API...");
+		
+		SearchRequest searchRequest = new SearchRequest(INDEX_DEMO_ITEM); 
+
+		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder(); 
+		sourceBuilder.query(QueryBuilders.termQuery("title", "아이폰")); 
+		//sourceBuilder.query(QueryBuilders.matchQuery("title", "아이폰"));
+		sourceBuilder.from(0); // paging from
+		sourceBuilder.size(5); // paging count
+		searchRequest.source(sourceBuilder);
+		
+		SearchResponse searchResponse = client.search(searchRequest, RequestOptions.DEFAULT);
+		
+		
+		RestStatus status = searchResponse.status();
+		log.info("testing search API... status=" + status);
+		TimeValue took = searchResponse.getTook();
+		log.info("testing search API... took=" + took);
+		Boolean terminatedEarly = searchResponse.isTerminatedEarly();
+		boolean timedOut = searchResponse.isTimedOut();
+		int totalShards = searchResponse.getTotalShards();
+		int successfulShards = searchResponse.getSuccessfulShards();
+		int failedShards = searchResponse.getFailedShards();
+		for (ShardSearchFailure failure : searchResponse.getShardFailures()) {
+		    // failures should be handled here
+		}
+		
+		SearchHits hits = searchResponse.getHits();
+		log.info("testing search API... SearchHits=" + hits);
+		TotalHits totalHits = hits.getTotalHits();
+		log.info("testing search API... TotalHits=" + totalHits);
+		// the total number of hits, must be interpreted in the context of totalHits.relation
+		long numHits = totalHits.value;
+		// whether the number of hits is accurate (EQUAL_TO) or a lower bound of the total (GREATER_THAN_OR_EQUAL_TO)
+		TotalHits.Relation relation = totalHits.relation;
+		float maxScore = hits.getMaxScore();
+		SearchHit[] searchHits = hits.getHits();
+		
+		log.info("testing searchHits = " + searchHits.length);
+		
+		for (SearchHit hit : searchHits) {
+		    // do something with the SearchHit
+			String index = hit.getIndex();
+			String id = hit.getId();
+			float score = hit.getScore();
+			String sourceAsString = hit.getSourceAsString();
+			Map<String, Object> sourceAsMap = hit.getSourceAsMap();
+			String documentTitle = (String) sourceAsMap.get("title");
+			String documentDescription = (String) sourceAsMap.get("description");
+			log.info("title = " + documentTitle);
+			log.info("description = " + documentDescription);
+		}
 	}
 	
 	private static void testIndexRequest(RestHighLevelClient client) throws IOException {
@@ -69,6 +139,8 @@ public class DemoElasticsearchApplication {
 		XContentBuilder builder = XContentFactory.jsonBuilder();
 		builder.startObject();
 		{
+			builder.field("title", "아이폰 6S Plus");
+			builder.field("description", "거의 새것이나 다름 없어요.");
 			builder.field("category", "여성의류");
 			builder.field("level", 3);
 			builder.timeField("registered", new Date());
@@ -76,18 +148,18 @@ public class DemoElasticsearchApplication {
 		}
 		builder.endObject();
 		
-		IndexRequest indexRequest = new IndexRequest("iteminfo2").id("v5KO4XMB_i31VgtFC0s1").source(builder);
+		IndexRequest indexRequest = new IndexRequest(INDEX_DEMO_ITEM).id("v5KO4XMB_i31VgtFC0s1").source(builder);
 		IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
 		log.info("response index=" + indexResponse.getIndex() + ", id=" + indexResponse.getId() + ", result=" + indexResponse.getResult());
 	}
 	
 	private static void testDeleteIndexRequest(RestHighLevelClient client) throws IOException {
-		DeleteIndexRequest request = new DeleteIndexRequest("iteminfo2");
+		DeleteIndexRequest request = new DeleteIndexRequest(INDEX_DEMO_ITEM);
 		client.indices().delete(request, RequestOptions.DEFAULT);
 	}
 	
 	private static void testGetRequest(RestHighLevelClient client) throws IOException {
-		GetRequest request = new GetRequest("iteminfo2", "v5KO4XMB_i31VgtFC0s1");
+		GetRequest request = new GetRequest(INDEX_DEMO_ITEM, "v5KO4XMB_i31VgtFC0s1");
 		GetResponse response = client.get(request, RequestOptions.DEFAULT);
 		
 		if (response.isExists()) {
@@ -96,6 +168,8 @@ public class DemoElasticsearchApplication {
 				log.info("source is empty");
 			} else {
 				Map<String, Object> sourceMap = response.getSource();
+				log.info("title = " + sourceMap.get("title"));
+				log.info("description = " + sourceMap.get("description"));
 				log.info("category = " + sourceMap.get("category"));
 				log.info("level = " + sourceMap.get("level"));
 				String geohash = (String) sourceMap.get("location");
@@ -107,13 +181,13 @@ public class DemoElasticsearchApplication {
 	}
 	
 	private static void testDeleteRequest(RestHighLevelClient client) throws IOException {
-		DeleteRequest request = new DeleteRequest("iteminfo2", "v5KO4XMB_i31VgtFC0s1");
+		DeleteRequest request = new DeleteRequest(INDEX_DEMO_ITEM, "v5KO4XMB_i31VgtFC0s1");
 		DeleteResponse response = client.delete(request, RequestOptions.DEFAULT);
 		log.info("delete response.getResult " + response.getResult());
 	}
 	
 	private static void testGetSourceRequest(RestHighLevelClient client) throws IOException {
-		GetSourceRequest request = new GetSourceRequest("iteminfo2", "v5KO4XMB_i31VgtFC0s1");
+		GetSourceRequest request = new GetSourceRequest(INDEX_DEMO_ITEM, "v5KO4XMB_i31VgtFC0s1");
 		GetSourceResponse response = client.getSource(request, RequestOptions.DEFAULT);
 		
 		Map<String, Object> sourceMap = response.getSource();
